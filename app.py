@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import mysql.connector
 import os
 import dotenv 
@@ -6,14 +6,13 @@ import dotenv
 dotenv.load_dotenv()
 
 app = Flask(__name__)
-# app.config["JSON_SORT_KEYS"] = False
+app.config["JSON_SORT_KEYS"] = False
 
 connection = mysql.connector.connect(
         host=os.getenv('HOST'), 
         user='root', 
         password=os.getenv('PASSWORD'), 
         port=os.getenv('PORT'), 
-        db=os.getenv('DB')
     )
 
 cursor = connection.cursor()
@@ -21,7 +20,6 @@ cursor = connection.cursor()
 
 def database():
     try:
-        # cursor = connection.cursor()
 
         cursor.execute("CREATE DATABASE IF NOT EXISTS mydatabase")
         
@@ -31,7 +29,7 @@ def database():
             id int not null auto_increment,
             nome varchar(110),
             cpf varchar(11),
-            dt_nascimento date,
+            data_nascimento date,
             sexo enum('F', 'M'),
             peso decimal(5, 2),
             altura decimal(3, 2),
@@ -45,37 +43,38 @@ def database():
 
 database()
 
+
 @app.post("/users")
 def create_users():
-    # try:
-    # cursor = connection.cursor()
+    data = request.json
+
+    if not 'nacionalidade' in data:
+        data['nacionalidade'] = 'default'
+    else:
+        data['nacionalidade']
+
+
+    users_keys = ["nome", "cpf", "data_nascimento", "sexo", "peso", "altura", "nacionalidade"]    
     
-    cursor.execute("""INSERT INTO users
-        (id, nome, cpf, dt_nascimento, sexo, peso, altura, nacionalidade)
-        values
-        (default, 'Maria', '11111111111', '1995-05-11', 'F', '45.62', '1.54', default),
-        (default, 'João', '22222222222', '1986-01-26', 'M', '97.85', '1.97', 'Canadense'),
-        (default, 'Cléber', '33333333333', '1998-12-12', 'M', '59.04', '1.67', 'Brasileira'),
-        (default, 'Lucas', '44444444444', '1995-07-25', 'M', '80.30', '1.81', 'Irlandesa'),
-        (default, 'Poliana', '55555555555', '2000-05-22', 'F', '58.37', '1.58', default);
-    """)
+    try:
+    
+        cursor.execute(f"""INSERT INTO users
+            (id, nome, cpf, data_nascimento, sexo, peso, altura, nacionalidade)
+            values
+            (default, '{data['nome']}', '{data['cpf']}', '{data['data_nascimento']}', '{data['sexo']}', '{data['peso']}', '{data['altura']}', {data['nacionalidade']})
+        """)
 
-    # cursor.execute("""INSERT INTO users
-    #     (id, nome, cpf, dt_nascimento, sexo, peso, altura, nacionalidade)
-    #     values
-    #     (default, '%s', %s, %s, %s, %s, %s, %s);
-    # """)
+        connection.commit()
 
-    # commit é usado quando há alterações no banco, como:
-    # inserção, deleção e update de dados
-    connection.commit()
+        return jsonify(data)
+    except:
+        return {"accepted keys": [key for key in users_keys if key not in users_keys]}
 
-    return {"msg": "Record inserted successfully into users table"}
 
-@app.get("/")
+@app.get("/users")
 def get_all_users():
 
-    users_keys = ["id", "nome", "cpf", "dt_nascimento", "sexo", "peso", "altura", "nacionalidade"]
+    users_keys = ["id", "nome", "cpf", "data_nascimento", "sexo", "peso", "altura", "nacionalidade"]
 
     cursor.execute("SELECT * FROM users;")  
     users = cursor.fetchall()
@@ -83,3 +82,70 @@ def get_all_users():
     result = [dict(zip(users_keys, user)) for user in users]
 
     return jsonify(result)
+
+
+@app.get("/users/<int:id>")
+def get_user(id):
+
+    user_keys = ["id", "nome", "cpf", "data_nascimento", "sexo", "peso", "altura", "nacionalidade"]
+
+    cursor.execute(f"SELECT * FROM users WHERE id = {id};")  
+
+    user = cursor.fetchall()
+
+    if not user:
+        return jsonify({"msg": "user not found"}), 404
+    
+    result = [dict(zip(user_keys, user)) for user in user]
+
+    return jsonify({"data": result}), 200
+
+
+
+@app.patch("/users/<int:id>")
+def update_user(id):
+
+    user_keys = ["id", "nome", "cpf", "data_nascimento", "sexo", "peso", "altura", "nacionalidade"]
+
+    cursor.execute(f"SELECT * FROM users WHERE id = {id};")  
+
+    user = cursor.fetchall()
+    
+    if not user:
+        return jsonify({"msg": "user not found"}), 404
+        
+    data = request.json
+
+    for key in data:
+        if key == 'id':
+            return {"msg": "unavailable field, id can not be changed"}, 400
+        if key not in user_keys:            
+            return ({"available keys": [key for key in user_keys]})
+        cursor.execute(f"UPDATE users SET {key} = '{data[key]}' WHERE id = {id};")  
+
+    connection.commit()
+
+    cursor.execute(f"SELECT * FROM users WHERE id = {id};")  
+
+    user = cursor.fetchall()
+
+    result = [dict(zip(user_keys, user)) for user in user]
+
+    return jsonify({"data": result}), 200
+    
+
+@app.delete("/users/<int:id>")
+def delete_user(id):
+    cursor.execute(f"SELECT * FROM users WHERE id = {id};")  
+
+    user = cursor.fetchall()
+    
+    if not user:
+        return jsonify({"msg": "user not found"}), 404
+    
+    cursor.execute(f"DELETE FROM users WHERE id = {id};")  
+
+    connection.commit()
+
+    return jsonify({"msg": "deleted successfully"}), 200
+    
